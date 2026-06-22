@@ -14,6 +14,9 @@ import com.sudegoratechglobal.current.data.remote.GoogleDriveService
 import com.sudegoratechglobal.current.data.repository.TaskRepository
 import com.sudegoratechglobal.current.util.AlarmReceiver
 import com.sudegoratechglobal.current.util.NlpParser
+import com.sudegoratechglobal.current.widget.AestheticTimerWidget
+import com.sudegoratechglobal.current.util.StreakEngine
+import androidx.glance.appwidget.updateAll
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -29,6 +32,7 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
     // Data Flows
     val activeTasks: StateFlow<List<TaskEntity>>
     val allTasks: StateFlow<List<TaskEntity>>
+    val streakCount: StateFlow<Int>
 
     // Onboarding Flows
     private val _onboardingCompleted = MutableStateFlow(false)
@@ -68,6 +72,10 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
 
         allTasks = repository.getAllTasksFlow()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+        streakCount = repository.getAllTasksFlow()
+            .map { tasks -> StreakEngine.calculateStreak(tasks) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
         _onboardingCompleted.value = sharedPrefs.getBoolean("onboarding_done", false)
         _userName.value = sharedPrefs.getString("user_name", "") ?: ""
@@ -201,6 +209,23 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // Widget refresh helper
+    private fun updateWidgetState(taskTitle: String, timeText: String, isRunning: Boolean) {
+        sharedPrefs.edit()
+            .putString("widget_task_title", taskTitle)
+            .putString("widget_time_text", timeText)
+            .putBoolean("widget_timer_running", isRunning)
+            .apply()
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                AestheticTimerWidget().updateAll(getApplication())
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
     // Timer Execution Engine
     fun startTimer(task: TaskEntity, type: String) {
         timerJob?.cancel()
@@ -212,6 +237,9 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
         _timerRemainingSeconds.value = durationSec
         _timerIsRunning.value = true
 
+        val initialTimeText = "${durationSec / 60}:00"
+        updateWidgetState(task.title, initialTimeText, true)
+
         timerJob = viewModelScope.launch {
             var seconds = durationSec
             while (seconds > 0) {
@@ -219,6 +247,9 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
                 if (_timerIsRunning.value) {
                     seconds--
                     _timerRemainingSeconds.value = seconds
+                    val timeText = "${seconds / 60}:${String.format("%02d", seconds % 60)}"
+                    updateWidgetState(task.title, timeText, true)
+
                     // Accumulate elapsed time on task
                     val currentTask = _activeTimerTask.value
                     if (currentTask != null) {
@@ -234,10 +265,16 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
 
     fun pauseTimer() {
         _timerIsRunning.value = false
+        val seconds = _timerRemainingSeconds.value
+        val timeText = "${seconds / 60}:${String.format("%02d", seconds % 60)}"
+        updateWidgetState(_activeTimerTask.value?.title ?: "No Active Session", timeText, false)
     }
 
     fun resumeTimer() {
         _timerIsRunning.value = true
+        val seconds = _timerRemainingSeconds.value
+        val timeText = "${seconds / 60}:${String.format("%02d", seconds % 60)}"
+        updateWidgetState(_activeTimerTask.value?.title ?: "No Active Session", timeText, true)
     }
 
     fun stopTimer() {
@@ -246,6 +283,7 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
         _activeTimerTask.value = null
         _timerIsRunning.value = false
         _timerRemainingSeconds.value = 0
+        updateWidgetState("Lock-in Clear", "Focus Mode", false)
     }
 
     private fun onTimerComplete() {

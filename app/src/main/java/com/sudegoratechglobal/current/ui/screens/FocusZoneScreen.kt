@@ -49,6 +49,7 @@ fun FocusZoneScreen(viewModel: TaskViewModel) {
     val haptic = LocalHapticFeedback.current
     val activeTasks by viewModel.activeTasks.collectAsState()
     val userName by viewModel.userName.collectAsState()
+    val streakCount by viewModel.streakCount.collectAsState()
     
     val activeTimerTask by viewModel.activeTimerTask.collectAsState()
     val timerRemaining by viewModel.timerRemainingSeconds.collectAsState()
@@ -118,19 +119,28 @@ fun FocusZoneScreen(viewModel: TaskViewModel) {
                 ) {
                     Spacer(modifier = Modifier.height(24.dp))
                     
-                    // Conversational header
-                    Text(
-                        text = "Hey $userName,",
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = CleanOffWhite,
-                        letterSpacing = (-0.5).sp
-                    )
-                    Text(
-                        text = "Here's what needs lock-in today.",
-                        fontSize = 15.sp,
-                        color = MutedText
-                    )
+                    // Conversational header row with StreakBadge
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Hey $userName,",
+                                fontSize = 28.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = CleanOffWhite,
+                                letterSpacing = (-0.5).sp
+                            )
+                            Text(
+                                text = "Here's what needs lock-in today.",
+                                fontSize = 15.sp,
+                                color = MutedText
+                            )
+                        }
+                        StreakBadge(streakCount = streakCount)
+                    }
 
                     Spacer(modifier = Modifier.height(24.dp))
 

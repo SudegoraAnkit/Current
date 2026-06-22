@@ -51,6 +51,8 @@ fun ReportScreen(viewModel: TaskViewModel) {
     val isDriveLinked by viewModel.isDriveLinked.collectAsState()
     val driveSyncState by viewModel.driveSyncState.collectAsState()
 
+    var showVibeCheckDialog by remember { mutableStateOf(false) }
+
     // Calculate mock/real metrics from tasks list
     val completedTasks = allTasks.filter { it.isCompleted }
     val totalFocusedSeconds = allTasks.sumOf { it.elapsedTime }
@@ -161,6 +163,62 @@ fun ReportScreen(viewModel: TaskViewModel) {
                             modifier = Modifier.size(24.dp)
                         )
                     }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Weekly Vibe Check Card Trigger Banner
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = CardSurface
+                ),
+                shape = RoundedCornerShape(24.dp),
+                border = CardDefaults.outlinedCardBorder(false).copy(
+                    brush = SolidColor(BorderColor)
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        showVibeCheckDialog = true
+                    }
+                    .shadow(2.dp, RoundedCornerShape(24.dp))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "WEEKLY PRODUCTIVITY PERSONA",
+                            fontSize = 11.sp,
+                            color = MutedText,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Sunday Vibe Check",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = CleanOffWhite
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Auto-generate your GenZ-style story summary.",
+                            fontSize = 12.sp,
+                            color = MutedText
+                        )
+                    }
+                    Text(
+                        text = "✨",
+                        fontSize = 24.sp,
+                        modifier = Modifier.padding(start = 12.dp)
+                    )
                 }
             }
 
@@ -382,6 +440,16 @@ fun ReportScreen(viewModel: TaskViewModel) {
                     containerColor = CardSurface
                 )
             }
+        }
+
+        if (showVibeCheckDialog) {
+            VibeCheckCardDialog(
+                totalMinutes = totalFocusedMinutes,
+                completedCount = completedTasks.size,
+                pomodoroMinutes = pomodoroMinutes,
+                frogMinutes = frogMinutes,
+                onDismiss = { showVibeCheckDialog = false }
+            )
         }
     }
 }

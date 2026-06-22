@@ -13,6 +13,7 @@ import android.telephony.SmsManager
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.sudegoratechglobal.current.data.local.AppDatabase
+import com.sudegoratechglobal.current.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -100,7 +101,7 @@ class AlarmReceiver : BroadcastReceiver() {
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setContentTitle("Current Focus Complete")
             .setContentText(message)
-            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            .setSmallIcon(R.drawable.ic_notification)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
@@ -149,7 +150,7 @@ class AlarmReceiver : BroadcastReceiver() {
             .setContentText("Missed: \"$taskTitle\"")
             .setSubText(description)
             .setStyle(NotificationCompat.BigTextStyle().bigText("Missed: \"$taskTitle\"\n$description"))
-            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setSmallIcon(R.drawable.ic_notification)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
