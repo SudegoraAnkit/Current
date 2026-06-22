@@ -85,6 +85,9 @@ dependencies {
   implementation(libs.androidx.compose.material3)
   implementation("androidx.compose.material:material-icons-core")
   implementation("androidx.compose.material:material-icons-extended")
+  // Glance AppWidgets (for Lock screen & Home screen widgets)
+  implementation("androidx.glance:glance-appwidget:1.1.0")
+  implementation("androidx.glance:glance-material3:1.1.0")
   // Tooling
   debugImplementation(libs.androidx.compose.ui.tooling)
   // Instrumented tests
