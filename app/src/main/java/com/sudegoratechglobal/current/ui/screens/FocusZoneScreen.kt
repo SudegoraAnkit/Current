@@ -14,6 +14,8 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -311,7 +313,7 @@ fun FocusTaskCard(
                         .fillMaxWidth()
                         .padding(top = 20.dp)
                 ) {
-                    Divider(color = BorderColor, modifier = Modifier.padding(bottom = 16.dp))
+                    HorizontalDivider(color = BorderColor, modifier = Modifier.padding(bottom = 16.dp))
 
                     if (isTimerActive) {
                         // Showing countdown timer UI
@@ -371,7 +373,7 @@ fun FocusTaskCard(
                         Spacer(modifier = Modifier.height(12.dp))
                         
                         LinearProgressIndicator(
-                            progress = timerProgress,
+                            progress = { timerProgress },
                             color = SageGreen,
                             trackColor = Color(0xFF1E2220),
                             modifier = Modifier
@@ -407,7 +409,7 @@ fun FocusTaskCard(
                             ExecutionOptionButton(
                                 label = "Time Box",
                                 description = "15m chunk",
-                                icon = Icons.Default.List,
+                                icon = Icons.AutoMirrored.Filled.List,
                                 gradient = LavenderToPeachGradient,
                                 modifier = Modifier.weight(1f),
                                 onClick = { onStartTimer("TIME_BOXING", 15) }
@@ -564,7 +566,7 @@ fun QuickDropInputBar(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Send,
+                        imageVector = Icons.AutoMirrored.Filled.Send,
                         contentDescription = "Send",
                         tint = if (value.trim().isNotEmpty()) Color(0xFF1E3527) else MutedText,
                         modifier = Modifier.size(18.dp)

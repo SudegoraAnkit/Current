@@ -4,9 +4,10 @@ plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.compose.compiler)
   alias(libs.plugins.kotlin.serialization)
+  alias(libs.plugins.google.ksp)
 }
 
-android {
+configure<com.android.build.api.dsl.ApplicationExtension> {
     namespace = "com.sudegoratechglobal.current"
     compileSdk = 36
 
@@ -110,10 +111,10 @@ dependencies {
   implementation(libs.androidx.lifecycle.viewmodel.navigation3)
 
   // Room Database
-  val roomVersion = "2.6.1"
+  val roomVersion = "2.8.4"
   implementation("androidx.room:room-runtime:$roomVersion")
   implementation("androidx.room:room-ktx:$roomVersion")
-  annotationProcessor("androidx.room:room-compiler:$roomVersion")
+  ksp("androidx.room:room-compiler:$roomVersion")
 
   // JSON Serialization
   implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")

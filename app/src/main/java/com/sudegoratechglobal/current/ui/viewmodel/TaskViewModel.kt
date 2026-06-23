@@ -18,18 +18,29 @@ import com.sudegoratechglobal.current.widget.AestheticTimerWidget
 import com.sudegoratechglobal.current.util.StreakEngine
 import androidx.glance.appwidget.updateAll
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class TaskViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val repository: TaskRepository
     private val sharedPrefs = application.getSharedPreferences("current_app_prefs", Context.MODE_PRIVATE)
 
-    // Data Flows
+    // DB Initialization states
+    private val _dbInitialized = MutableStateFlow(false)
+    val dbInitialized: StateFlow<Boolean> = _dbInitialized
+
+    private val _dbError = MutableStateFlow<String?>(null)
+    val dbError: StateFlow<String?> = _dbError
+
+    @Volatile
+    private var repository: TaskRepository? = null
+
+    // Data Flows mapped reactively after initialization
     val activeTasks: StateFlow<List<TaskEntity>>
     val allTasks: StateFlow<List<TaskEntity>>
     val streakCount: StateFlow<Int>
@@ -63,22 +74,54 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
     private var timerJob: Job? = null
 
     init {
-        val database = AppDatabase.getDatabase(application)
-        repository = TaskRepository(database.taskDao(), viewModelScope)
-        GoogleDriveService.init(application)
+        // Asynchronously initialize database off the main thread to prevent startup crash
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val database = AppDatabase.getDatabase(application)
+                repository = TaskRepository(database.taskDao(), viewModelScope)
+                GoogleDriveService.init(application)
+                _dbInitialized.value = true
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _dbError.value = e.localizedMessage ?: e.toString()
+            }
+        }
 
-        activeTasks = repository.getActiveTasksFlow()
+        activeTasks = _dbInitialized
+            .flatMapLatest { initialized ->
+                if (initialized) {
+                    repository?.getActiveTasksFlow() ?: flowOf(emptyList())
+                } else {
+                    flowOf(emptyList())
+                }
+            }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-        allTasks = repository.getAllTasksFlow()
+        allTasks = _dbInitialized
+            .flatMapLatest { initialized ->
+                if (initialized) {
+                    repository?.getAllTasksFlow() ?: flowOf(emptyList())
+                } else {
+                    flowOf(emptyList())
+                }
+            }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-        streakCount = repository.getAllTasksFlow()
+        streakCount = allTasks
             .map { tasks -> StreakEngine.calculateStreak(tasks) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
         _onboardingCompleted.value = sharedPrefs.getBoolean("onboarding_done", false)
         _userName.value = sharedPrefs.getString("user_name", "") ?: ""
+    }
+
+    /**
+     * Helper function that suspends until database initialization completes,
+     * ensuring repository operations don't run on null references.
+     */
+    private suspend fun getSafeRepository(): TaskRepository? {
+        _dbInitialized.first { it }
+        return repository
     }
 
     // Onboarding Actions
@@ -97,6 +140,7 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
     // Task Operations
     fun addTaskFromNlp(input: String) {
         viewModelScope.launch(Dispatchers.IO) {
+            val repo = getSafeRepository() ?: return@launch
             val parsed = NlpParser.parse(input)
             val task = TaskEntity(
                 title = parsed.title,
@@ -106,7 +150,7 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
                 accountabilityContact = parsed.accountabilityContact,
                 executionStyle = "POMODORO" // Default execution style
             )
-            val insertedId = repository.insertTask(getApplication(), task)
+            val insertedId = repo.insertTask(getApplication(), task)
             
             if (task.isLocked) {
                 val createdTask = task.copy(id = insertedId)
@@ -117,11 +161,12 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
 
     fun completeTask(task: TaskEntity) {
         viewModelScope.launch(Dispatchers.IO) {
+            val repo = getSafeRepository() ?: return@launch
             val completedTask = task.copy(
                 isCompleted = true,
                 completionTime = System.currentTimeMillis()
             )
-            repository.updateTask(getApplication(), completedTask)
+            repo.updateTask(getApplication(), completedTask)
             cancelProcrastinationAlarm(task)
             // If the completed task is currently timed, stop timer
             if (_activeTimerTask.value?.id == task.id) {
@@ -132,25 +177,28 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateTaskExecutionStyle(task: TaskEntity, style: String, durationMinutes: Int) {
         viewModelScope.launch(Dispatchers.IO) {
+            val repo = getSafeRepository() ?: return@launch
             val updated = task.copy(
                 executionStyle = style,
                 durationMinutes = durationMinutes
             )
-            repository.updateTask(getApplication(), updated)
+            repo.updateTask(getApplication(), updated)
         }
     }
 
     fun updateTaskDuration(task: TaskEntity, durationMinutes: Int) {
         viewModelScope.launch(Dispatchers.IO) {
+            val repo = getSafeRepository() ?: return@launch
             val updated = task.copy(durationMinutes = durationMinutes)
-            repository.updateTask(getApplication(), updated)
+            repo.updateTask(getApplication(), updated)
         }
     }
 
     fun rescheduleTask(task: TaskEntity, newTime: Long) {
         viewModelScope.launch(Dispatchers.IO) {
+            val repo = getSafeRepository() ?: return@launch
             val updated = task.copy(scheduledTime = newTime)
-            repository.updateTask(getApplication(), updated)
+            repo.updateTask(getApplication(), updated)
             if (task.isLocked) {
                 cancelProcrastinationAlarm(task)
                 scheduleProcrastinationAlarm(updated)
@@ -160,12 +208,13 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
 
     fun swipeTaskToTomorrow(task: TaskEntity) {
         viewModelScope.launch(Dispatchers.IO) {
+            val repo = getSafeRepository() ?: return@launch
             val calendar = Calendar.getInstance().apply {
                 timeInMillis = task.scheduledTime
                 add(Calendar.DAY_OF_YEAR, 1)
             }
             val updated = task.copy(scheduledTime = calendar.timeInMillis)
-            repository.updateTask(getApplication(), updated)
+            repo.updateTask(getApplication(), updated)
             if (task.isLocked) {
                 cancelProcrastinationAlarm(task)
                 scheduleProcrastinationAlarm(updated)
@@ -175,7 +224,8 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteTask(task: TaskEntity) {
         viewModelScope.launch(Dispatchers.IO) {
-            repository.deleteTask(getApplication(), task)
+            val repo = getSafeRepository() ?: return@launch
+            repo.deleteTask(getApplication(), task)
             cancelProcrastinationAlarm(task)
             if (_activeTimerTask.value?.id == task.id) {
                 stopTimer()
@@ -186,9 +236,10 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
     // Google Drive Backup Actions
     fun linkGoogleDrive() {
         viewModelScope.launch {
+            val repo = getSafeRepository() ?: return@launch
             val success = GoogleDriveService.link(getApplication(), _userName.value)
             if (success) {
-                repository.triggerBackup(getApplication())
+                repo.triggerBackup(getApplication())
             }
         }
     }
@@ -200,7 +251,12 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
     // Low-Friction Team Sync (Deep-Link imports)
     fun importTeamTasks(urlString: String, onResult: (String) -> Unit) {
         viewModelScope.launch {
-            val result = repository.syncTeamSpace(getApplication(), urlString)
+            val repo = getSafeRepository()
+            if (repo == null) {
+                onResult("Database not initialized")
+                return@launch
+            }
+            val result = repo.syncTeamSpace(getApplication(), urlString)
             result.onSuccess { count ->
                 onResult("Synced Team Space: added $count items to your Focus Zone!")
             }.onFailure { exception ->
@@ -255,7 +311,7 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
                     if (currentTask != null) {
                         val updatedTask = currentTask.copy(elapsedTime = currentTask.elapsedTime + 1)
                         _activeTimerTask.value = updatedTask
-                        repository.updateTask(getApplication(), updatedTask)
+                        repository?.updateTask(getApplication(), updatedTask)
                     }
                 }
             }
