@@ -42,8 +42,13 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
 
     // Data Flows mapped reactively after initialization
     val activeTasks: StateFlow<List<TaskEntity>>
+    val notesTasks: StateFlow<List<TaskEntity>>
+    val completedTodayTasks: StateFlow<List<TaskEntity>>
     val allTasks: StateFlow<List<TaskEntity>>
     val streakCount: StateFlow<Int>
+
+    // Brain Dump sandbox state
+    val brainDumpText = MutableStateFlow("")
 
     // Onboarding Flows
     private val _onboardingCompleted = MutableStateFlow(false)
@@ -97,6 +102,26 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+        notesTasks = _dbInitialized
+            .flatMapLatest { initialized ->
+                if (initialized) {
+                    repository?.getNotesFlow() ?: flowOf(emptyList())
+                } else {
+                    flowOf(emptyList())
+                }
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+        completedTodayTasks = _dbInitialized
+            .flatMapLatest { initialized ->
+                if (initialized) {
+                    repository?.getCompletedTodayFlow(getStartOfDayMillis(), getEndOfDayMillis()) ?: flowOf(emptyList())
+                } else {
+                    flowOf(emptyList())
+                }
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
         allTasks = _dbInitialized
             .flatMapLatest { initialized ->
                 if (initialized) {
@@ -142,17 +167,20 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             val repo = getSafeRepository() ?: return@launch
             val parsed = NlpParser.parse(input)
+            val isNote = parsed.scheduledTime == null
             val task = TaskEntity(
                 title = parsed.title,
                 scheduledTime = parsed.scheduledTime,
                 priority = parsed.priority,
                 isLocked = parsed.isLocked,
                 accountabilityContact = parsed.accountabilityContact,
-                executionStyle = "POMODORO" // Default execution style
+                executionStyle = "POMODORO", // Default execution style
+                durationMinutes = if (isNote) null else 25,
+                vibe = parsed.vibe
             )
             val insertedId = repo.insertTask(getApplication(), task)
             
-            if (task.isLocked) {
+            if (task.isLocked && task.scheduledTime != null) {
                 val createdTask = task.copy(id = insertedId)
                 scheduleProcrastinationAlarm(createdTask)
             }
@@ -209,8 +237,9 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
     fun swipeTaskToTomorrow(task: TaskEntity) {
         viewModelScope.launch(Dispatchers.IO) {
             val repo = getSafeRepository() ?: return@launch
+            val baseTime = task.scheduledTime ?: System.currentTimeMillis()
             val calendar = Calendar.getInstance().apply {
-                timeInMillis = task.scheduledTime
+                timeInMillis = baseTime
                 add(Calendar.DAY_OF_YEAR, 1)
             }
             val updated = task.copy(scheduledTime = calendar.timeInMillis)
@@ -220,6 +249,36 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
                 scheduleProcrastinationAlarm(updated)
             }
         }
+    }
+
+    fun uncompleteTask(task: TaskEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val repo = getSafeRepository() ?: return@launch
+            repo.uncompleteTask(getApplication(), task.id)
+        }
+    }
+
+    fun promoteNoteToTask(task: TaskEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val repo = getSafeRepository() ?: return@launch
+            val promoted = task.copy(
+                scheduledTime = System.currentTimeMillis(),
+                durationMinutes = 25
+            )
+            repo.updateTask(getApplication(), promoted)
+        }
+    }
+
+    fun elevateBrainDump() {
+        val text = brainDumpText.value.trim()
+        if (text.isNotEmpty()) {
+            addTaskFromNlp(text)
+            brainDumpText.value = ""
+        }
+    }
+
+    fun dismissBrainDump() {
+        brainDumpText.value = ""
     }
 
     fun deleteTask(task: TaskEntity) {
@@ -288,7 +347,7 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
         _activeTimerTask.value = task
         _timerType.value = type
 
-        val durationSec = task.durationMinutes * 60
+        val durationSec = (task.durationMinutes ?: 25) * 60
         _timerTotalDuration.value = durationSec
         _timerRemainingSeconds.value = durationSec
         _timerIsRunning.value = true
@@ -370,6 +429,7 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
 
     // AlarmManager exact alarms for locked tasks
     private fun scheduleProcrastinationAlarm(task: TaskEntity) {
+        val time = task.scheduledTime ?: return
         val alarmManager = getApplication<Application>().getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val intent = Intent(getApplication(), AlarmReceiver::class.java).apply {
             action = "com.sudegoratechglobal.current.ACTION_PROCRASTINATION_TAX"
@@ -386,12 +446,12 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             if (alarmManager.canScheduleExactAlarms()) {
-                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, task.scheduledTime, pendingIntent)
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, time, pendingIntent)
             } else {
-                alarmManager.set(AlarmManager.RTC_WAKEUP, task.scheduledTime, pendingIntent)
+                alarmManager.set(AlarmManager.RTC_WAKEUP, time, pendingIntent)
             }
         } else {
-            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, task.scheduledTime, pendingIntent)
+            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, time, pendingIntent)
         }
     }
 
@@ -407,5 +467,23 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         alarmManager.cancel(pendingIntent)
+    }
+
+    private fun getStartOfDayMillis(): Long {
+        return Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+    }
+
+    private fun getEndOfDayMillis(): Long {
+        return Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 23)
+            set(Calendar.MINUTE, 59)
+            set(Calendar.SECOND, 59)
+            set(Calendar.MILLISECOND, 999)
+        }.timeInMillis
     }
 }
