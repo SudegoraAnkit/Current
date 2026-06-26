@@ -23,6 +23,16 @@ class TaskRepository(
 ) {
     fun getActiveTasksFlow(): Flow<List<TaskEntity>> = taskDao.getActiveTasksFlow()
 
+    fun getNotesFlow(): Flow<List<TaskEntity>> = taskDao.getNotesFlow()
+
+    fun getCompletedTodayFlow(startOfDay: Long, endOfDay: Long): Flow<List<TaskEntity>> =
+        taskDao.getCompletedTodayFlow(startOfDay, endOfDay)
+
+    suspend fun uncompleteTask(context: Context, id: Long) {
+        taskDao.uncompleteTask(id)
+        triggerBackup(context)
+    }
+
     fun getTasksForDateRange(startOfDay: Long, endOfDay: Long): Flow<List<TaskEntity>> =
         taskDao.getTasksForDateRange(startOfDay, endOfDay)
 

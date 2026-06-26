@@ -11,7 +11,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
@@ -96,7 +96,7 @@ fun TimelineScreen(viewModel: TaskViewModel) {
                             },
                             onTimeSlide = { offsetMinutes ->
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                val newTime = task.scheduledTime + (offsetMinutes * 60 * 1000)
+                                val newTime = (task.scheduledTime ?: 0L) + (offsetMinutes * 60 * 1000)
                                 viewModel.rescheduleTask(task, newTime)
                             }
                         )
@@ -119,7 +119,7 @@ fun TimelineTaskCard(
     var dragTimeOffset by remember { mutableStateOf(0) }
     var isDraggingVertically by remember { mutableStateOf(false) }
 
-    val dateText = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(task.scheduledTime))
+    val dateText = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(task.scheduledTime ?: 0L))
 
     // Vertical drag handling to slide time
     val verticalDragModifier = Modifier.pointerInput(task.id) {
@@ -200,7 +200,7 @@ fun TimelineTaskCard(
                     .padding(start = 24.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Default.ArrowForward,
+                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                     contentDescription = "Tomorrow",
                     tint = SoftPeach
                 )

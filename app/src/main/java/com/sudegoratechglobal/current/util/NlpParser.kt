@@ -6,10 +6,11 @@ import java.util.regex.Pattern
 
 data class ParsedTask(
     val title: String,
-    val scheduledTime: Long,
+    val scheduledTime: Long?,
     val priority: Int = 2,
     val isLocked: Boolean = false,
-    val accountabilityContact: String? = null
+    val accountabilityContact: String? = null,
+    val vibe: String? = null
 )
 
 object NlpParser {
@@ -19,6 +20,21 @@ object NlpParser {
         var priority = 2
         var isLocked = false
         var accountabilityContact: String? = null
+        var vibe: String? = null
+
+        // 0. Parse Vibe Tags (e.g. vibe:deep, vibe:focus, vibe:low, vibe:chill, vibe:home, vibe:cozy)
+        val vibePattern = Pattern.compile("vibe:(deep|focus|low|chill|home|cozy)", Pattern.CASE_INSENSITIVE)
+        val vibeMatcher = vibePattern.matcher(text)
+        if (vibeMatcher.find()) {
+            val level = vibeMatcher.group(1)?.lowercase(Locale.ROOT)
+            vibe = when (level) {
+                "deep", "focus" -> "DEEP_FOCUS"
+                "low", "chill" -> "LOW_ENERGY"
+                "home", "cozy" -> "HOME_BASE"
+                else -> null
+            }
+            text = vibeMatcher.replaceAll("").trim()
+        }
 
         // 1. Parse Priority (e.g. !high, !urgent, !1, !medium, !2, !low, !3)
         val priorityPattern = Pattern.compile("!(high|medium|low|urgent|1|2|3)", Pattern.CASE_INSENSITIVE)
@@ -154,24 +170,23 @@ object NlpParser {
         }
 
         // Fallback defaults
-        if (!dateSpecified && !timeSpecified) {
-            // Default to tomorrow at 9:00 AM
-            calendar.add(Calendar.DAY_OF_YEAR, 1)
-            calendar.set(Calendar.HOUR_OF_DAY, 9)
-            calendar.set(Calendar.MINUTE, 0)
-        } else if (dateSpecified && !timeSpecified) {
-            // Default to 9:00 AM on the specified day
-            calendar.set(Calendar.HOUR_OF_DAY, 9)
-            calendar.set(Calendar.MINUTE, 0)
-        } else if (!dateSpecified && timeSpecified) {
-            // Today at specified time. If time already passed, make it tomorrow
-            if (calendar.timeInMillis < System.currentTimeMillis()) {
-                calendar.add(Calendar.DAY_OF_YEAR, 1)
+        val scheduledTime: Long? = if (dateSpecified || timeSpecified) {
+            if (dateSpecified && !timeSpecified) {
+                // Default to 9:00 AM on the specified day
+                calendar.set(Calendar.HOUR_OF_DAY, 9)
+                calendar.set(Calendar.MINUTE, 0)
+            } else if (!dateSpecified && timeSpecified) {
+                // Today at specified time. If time already passed, make it tomorrow
+                if (calendar.timeInMillis < System.currentTimeMillis()) {
+                    calendar.add(Calendar.DAY_OF_YEAR, 1)
+                }
             }
+            calendar.set(Calendar.SECOND, 0)
+            calendar.set(Calendar.MILLISECOND, 0)
+            calendar.timeInMillis
+        } else {
+            null
         }
-
-        calendar.set(Calendar.SECOND, 0)
-        calendar.set(Calendar.MILLISECOND, 0)
 
         // Trim double spaces
         val finalTitle = text.replace(Regex("\\s+"), " ").trim()
@@ -179,10 +194,11 @@ object NlpParser {
 
         return ParsedTask(
             title = title,
-            scheduledTime = calendar.timeInMillis,
+            scheduledTime = scheduledTime,
             priority = priority,
             isLocked = isLocked,
-            accountabilityContact = accountabilityContact
+            accountabilityContact = accountabilityContact,
+            vibe = vibe
         )
     }
 

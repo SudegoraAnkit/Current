@@ -13,6 +13,7 @@ class NlpParserTest {
         assertEquals("Buy milk", parsed.title)
         assertFalse(parsed.isLocked)
         assertEquals(2, parsed.priority)
+        assertNull(parsed.scheduledTime)
     }
 
     @Test
@@ -21,7 +22,7 @@ class NlpParserTest {
         assertEquals("Call Mom", parsed.title)
         
         val calendar = Calendar.getInstance().apply {
-            timeInMillis = parsed.scheduledTime
+            timeInMillis = parsed.scheduledTime ?: 0L
         }
         
         val expectedDay = Calendar.getInstance().apply {
@@ -47,8 +48,15 @@ class NlpParserTest {
         val parsed = NlpParser.parse("Read books in 2 hours")
         assertEquals("Read books", parsed.title)
         
-        val timeDiff = parsed.scheduledTime - System.currentTimeMillis()
+        val timeDiff = (parsed.scheduledTime ?: 0L) - System.currentTimeMillis()
         // Difference should be roughly 2 hours (7200 seconds)
         assertTrue(timeDiff in 7100000..7300000)
+    }
+
+    @Test
+    fun testParseVibe() {
+        val parsed = NlpParser.parse("Workout vibe:low")
+        assertEquals("Workout", parsed.title)
+        assertEquals("LOW_ENERGY", parsed.vibe)
     }
 }

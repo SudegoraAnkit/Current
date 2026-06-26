@@ -9,7 +9,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
@@ -84,9 +83,13 @@ fun CurrentTheme(
             val activity = context as? Activity
             if (activity != null) {
                 val window = activity.window
-                window.statusBarColor = colorScheme.background.toArgb()
-                window.navigationBarColor = colorScheme.background.toArgb()
-                WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
+                // Use WindowCompat for modern edge-to-edge system bar appearance
+                // Status/navigation bar background colors are controlled via enableEdgeToEdge()
+                // in MainActivity; here we only toggle icon light/dark appearance.
+                WindowCompat.getInsetsController(window, view).apply {
+                    isAppearanceLightStatusBars = !darkTheme
+                    isAppearanceLightNavigationBars = !darkTheme
+                }
             }
         }
     }
